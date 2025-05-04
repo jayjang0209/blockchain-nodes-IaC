@@ -1,0 +1,60 @@
+# Local .terraform directories
+.terraform/
+.terraform.lock.hcl
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude sensitive variable files
+terraform.tfvars
+*.auto.tfvars
+
+# Ignore override files as they are usually environment-specific
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore CLI configuration files
+.terraformrc
+terraform.rc
+
+# Ignore SSH keys that might be accidentally placed here
+*.pem
+id_rsa*
+
+# Ignore temporary files
+*.tmp
+*.bak
+*.backup
+*.log
+
+# Ignore OS specific files
+.DS_Store
+Thumbs.db
+
+# Ignore Ansible retry files
+*.retry
+
+# Ignore temporary plan output
+tfplan
+
+# Ignore IntelliJ IDEA files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Ignore VS Code files
+.vscode/
+
+tmp
+
+# Ansible inventory file (generated dynamically)
+terraform/inventory.ini
