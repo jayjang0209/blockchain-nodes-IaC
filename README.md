@@ -101,7 +101,7 @@ Two files will be generated in the ~/.ssh directory:
 1. **Clone this repository**
 
 ```bash
-git clone https://github.com/yourusername/blockchain-nodes-IaC.git
+git clone https://github.com/jayjang0209/blockchain-nodes-IaC.git
 cd blockchain-nodes-IaC
 ```
 
