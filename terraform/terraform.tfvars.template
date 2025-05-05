@@ -1,0 +1,20 @@
+credentials_file = "/Users/username/.config/gcloud/your-credential.json"
+project_id       = "your-project"
+
+# SSH username for connecting to the VM
+ssh_username = "YOUR_USERNAME"
+
+# This overrides the default values in variables.tf
+ssh_public_keys = {
+  "username"    = "~/.ssh/id_rsa.pub"
+
+  # Uncomment and adjust for additional users
+  # "YOUR_USERNAME" = "~/.ssh/id_rsa.pub"
+  # "user2" = "~/.ssh/user2_key.pub"
+}
+
+# IP addresses allowed to access the VMs via SSH (CIDR notation)
+ssh_allowed_ips = [
+  "123.0.111.1/32",  # Your office IP
+  "123.11.100.1/32"  # Your home IP
+]

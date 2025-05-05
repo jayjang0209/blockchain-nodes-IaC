@@ -1,0 +1,266 @@
+---
+- name: Deploy Coreum Full Node
+  hosts: all
+  become: yes
+  vars:
+    coreum_user: "coreum"
+    coreum_chain_id: "coreum-testnet-1"
+    coreum_denom: "utestcore"
+    coreum_version: "v4.1.2"
+    cosmovisor_version: "v1.5.0"
+    upgrade_name: "v4patch2"
+    moniker: "full"
+    external_ip: "{{ ansible_host }}"
+
+  tasks:
+    - name: Create coreum user
+      user:
+        name: "coreum"
+        shell: /bin/bash
+        home: "/home/coreum"
+        create_home: yes
+      become: yes
+
+    # 1. Set System Prerequisites
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - crudini
+          - curl
+          - jq
+          - tar
+          - git
+          - wget
+        state: present
+    
+    - name: Install ACL support
+      apt:
+        name: acl
+        state: present
+      become: yes
+
+    - name: Set file descriptor limits for user
+      pam_limits:
+        domain: "{{ coreum_user }}"
+        limit_type: soft
+        limit_item: nofile
+        value: 65536
+
+    - name: Set hard file descriptor limits for user
+      pam_limits:
+        domain: "{{ coreum_user }}"
+        limit_type: hard
+        limit_item: nofile
+        value: 65536
+
+    # 2. Create Directory Structure
+    - name: Set Coreum environment variables
+      set_fact:
+        coreum_home: "/home/{{ coreum_user }}/.core/{{ coreum_chain_id }}"
+
+    - name: Create Coreum directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ coreum_user }}"
+        group: "{{ coreum_user }}"
+        mode: 0755
+      loop:
+        - "{{ coreum_home }}/bin"
+        - "{{ coreum_home }}/cosmovisor/genesis/bin"
+        - "{{ coreum_home }}/cosmovisor/upgrades"
+        - "{{ coreum_home }}/data"
+      become_user: "{{ coreum_user }}"
+
+    # 3. Download and Install Cored Binary
+    - name: Download cored binary
+      get_url:
+        url: "https://github.com/CoreumFoundation/coreum/releases/download/{{ coreum_version }}/cored-linux-amd64"
+        dest: "/tmp/cored-linux-amd64"
+        mode: 0755
+      become_user: "{{ coreum_user }}"
+
+    - name: Create upgrade directory
+      file:
+        path: "{{ coreum_home }}/cosmovisor/upgrades/{{ upgrade_name }}/bin"
+        state: directory
+        owner: "{{ coreum_user }}"
+        group: "{{ coreum_user }}"
+        mode: 0755
+      become_user: "{{ coreum_user }}"
+      when: upgrade_name != "genesis"
+
+    - name: Create symlink to current upgrade
+      file:
+        src: "{{ coreum_home }}/cosmovisor/upgrades/{{ upgrade_name }}"
+        dest: "{{ coreum_home }}/cosmovisor/current"
+        state: link
+        owner: "{{ coreum_user }}"
+        group: "{{ coreum_user }}"
+      become_user: "{{ coreum_user }}"
+      when: upgrade_name != "genesis"
+
+    - name: Set destination directory
+      set_fact:
+        destination_dir: "{% if upgrade_name == 'genesis' %}{{ coreum_home }}/cosmovisor/genesis/bin{% else %}{{ coreum_home }}/cosmovisor/upgrades/{{ upgrade_name }}/bin{% endif %}"
+
+    - name: Copy cored binary to destination
+      copy:
+        src: "/tmp/cored-linux-amd64"
+        dest: "{{ destination_dir }}/cored"
+        remote_src: yes
+        mode: 0755
+      become_user: "{{ coreum_user }}"
+
+    # 4. Install Cosmovisor
+    - name: Download cosmovisor
+      get_url:
+        url: "https://github.com/cosmos/cosmos-sdk/releases/download/cosmovisor%2F{{ cosmovisor_version }}/cosmovisor-{{ cosmovisor_version }}-linux-amd64.tar.gz"
+        dest: "/tmp/cosmovisor.tar.gz"
+        mode: 0644
+      become_user: "{{ coreum_user }}"
+
+    - name: Extract cosmovisor
+      shell: |
+        mkdir -p /tmp/cosmovisor-binaries
+        tar -xzf /tmp/cosmovisor.tar.gz -C /tmp/cosmovisor-binaries
+        cp /tmp/cosmovisor-binaries/cosmovisor {{ coreum_home }}/bin/
+        chmod +x {{ coreum_home }}/bin/cosmovisor
+        rm -rf /tmp/cosmovisor-binaries /tmp/cosmovisor.tar.gz
+      args:
+        executable: /bin/bash
+      become_user: "{{ coreum_user }}"
+
+    # 5. Set Environment Variables
+    - name: Configure Coreum environment variables in bashrc
+      blockinfile:
+        path: "/home/{{ coreum_user }}/.bashrc"
+        marker: "# {mark} COREUM ENVIRONMENT VARIABLES"
+        block: |
+          export COREUM_CHAIN_ID="{{ coreum_chain_id }}"
+          export COREUM_DENOM="{{ coreum_denom }}"
+          export COREUM_HOME="{{ coreum_home }}"
+          export COREUM_CHAIN_ID_ARGS="--chain-id=$COREUM_CHAIN_ID"
+          export PATH=$PATH:{{ coreum_home }}/bin:{{ destination_dir }}
+          export DAEMON_HOME="{{ coreum_home }}/"
+          export DAEMON_NAME="cored"
+          export COREUM_NODE="https://full-node.testnet-1.coreum.dev:26657"
+          export COREUM_NODE_ARGS="--node=$COREUM_NODE"
+        create: yes
+      become_user: "{{ coreum_user }}"
+
+    # 6. Initialize the Node
+    - name: Initialize node
+      shell: |
+        {{ destination_dir }}/cored init {{ moniker }} --chain-id {{ coreum_chain_id }}
+      args:
+        executable: /bin/bash
+        creates: "{{ coreum_home }}/config/config.toml"
+      become_user: "{{ coreum_user }}"
+
+    # 7. Configure Node
+    - name: Configure connection settings
+      shell: |
+        crudini --set {{ coreum_home }}/config/config.toml p2p addr_book_strict false
+        crudini --set {{ coreum_home }}/config/config.toml p2p external_address "\"tcp://{{ external_ip }}:26656\""
+        crudini --set {{ coreum_home }}/config/config.toml p2p laddr "\"tcp://0.0.0.0:26656\""
+        crudini --set {{ coreum_home }}/config/config.toml rpc laddr "\"tcp://0.0.0.0:26657\""
+      args:
+        executable: /bin/bash
+      become_user: "{{ coreum_user }}"
+
+    - name: Enable API and Swagger
+      shell: |
+        crudini --set {{ coreum_home }}/config/app.toml api enable true
+        crudini --set {{ coreum_home }}/config/app.toml api swagger true
+      args:
+        executable: /bin/bash
+      become_user: "{{ coreum_user }}"
+
+    - name: Enable Prometheus metrics
+      shell: |
+        crudini --set {{ coreum_home }}/config/config.toml instrumentation prometheus true
+      args:
+        executable: /bin/bash
+      become_user: "{{ coreum_user }}"
+
+    # 8. Configure State Sync
+    - name: Get trusted block height and hash
+      shell: |
+        COREUM_STATE_SYNC_SERVERS="https://full-node-eris.testnet-1.coreum.dev:26657,https://full-node-pluto.testnet-1.coreum.dev:26657"
+        CURRENT_BLOCK_DETAILS=$(curl ${COREUM_STATE_SYNC_SERVERS#*,}/block | jq -r '.result.block.header.height + " " + .result.block_id.hash')
+        CURRENT_BLOCK_HEIGHT=$(echo $CURRENT_BLOCK_DETAILS | awk '{print $1}' )
+        TRUSTED_BLOCK_HEIGHT=$(expr $CURRENT_BLOCK_HEIGHT - 1000)
+        TRUSTED_BLOCK_DETAILS=$(curl "${COREUM_STATE_SYNC_SERVERS#*,}/block?height=${TRUSTED_BLOCK_HEIGHT}" | jq -r '.result.block.header.height + " " + .result.block_id.hash')
+        TRUSTED_BLOCK_HASH=$(echo $TRUSTED_BLOCK_DETAILS | awk '{print $2}' )
+        echo "$TRUSTED_BLOCK_HEIGHT $TRUSTED_BLOCK_HASH"
+      register: trusted_block
+      become_user: "{{ coreum_user }}"
+
+    - name: Configure state sync
+      shell: |
+        COREUM_STATE_SYNC_SERVERS="https://full-node-eris.testnet-1.coreum.dev:26657,https://full-node-pluto.testnet-1.coreum.dev:26657"
+        crudini --set {{ coreum_home }}/config/config.toml statesync enable true
+        crudini --set {{ coreum_home }}/config/config.toml statesync rpc_servers "\"$COREUM_STATE_SYNC_SERVERS\""
+        crudini --set {{ coreum_home }}/config/config.toml statesync trust_height {{ trusted_block.stdout.split(' ')[0] }}
+        crudini --set {{ coreum_home }}/config/config.toml statesync trust_hash "\"{{ trusted_block.stdout.split(' ')[1] }}\""
+      args:
+        executable: /bin/bash
+      become_user: "{{ coreum_user }}"
+
+    # 9. Create private validator state file
+    - name: Create private validator state file
+      copy:
+        dest: "{{ coreum_home }}/data/priv_validator_state.json"
+        content: |
+          {
+            "height": "0",
+            "round": 0,
+            "step": 0
+          }
+        mode: 0644
+        owner: "{{ coreum_user }}"
+        group: "{{ coreum_user }}"
+
+    # 10. Create systemd service
+    - name: Create systemd service file
+      copy:
+        dest: /etc/systemd/system/cored.service
+        content: |
+          [Unit]
+          Description=Coreum Node
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          User={{ coreum_user }}
+          Group={{ coreum_user }}
+          WorkingDirectory=/home/{{ coreum_user }}
+          Environment="DAEMON_NAME=cored"
+          Environment="DAEMON_HOME={{ coreum_home }}/"
+          Environment="DAEMON_ALLOW_DOWNLOAD_BINARIES=false"
+          Environment="DAEMON_RESTART_AFTER_UPGRADE=true"
+          Environment="UNSAFE_SKIP_BACKUP=true"
+          ExecStart={{ coreum_home }}/bin/cosmovisor run start --chain-id {{ coreum_chain_id }}
+          Restart=always
+          RestartSec=3
+          LimitNOFILE=65536
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: 0644
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start cored service
+      systemd:
+        name: cored
+        state: started
+        enabled: yes
