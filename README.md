@@ -237,3 +237,7 @@ To deploy multiple nodes:
   - Verify network connectivity
   - Ensure adequate disk space
 
+## Future Improvements
+
+- **CI/CD Automation**:  
+  Integrate a CI/CD pipeline (e.g., GitHub Actions, GitLab CI) so that pushing changes to the main branch automatically triggers the full workflow—validating Terraform/Ansible code, running tests, and optionally deploying infrastructure in a staging environment. This will further streamline and automate the deployment process, ensuring reliability and faster iteration.
