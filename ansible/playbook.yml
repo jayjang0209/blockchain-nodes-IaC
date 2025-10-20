@@ -6,9 +6,9 @@
     coreum_user: "coreum"
     coreum_chain_id: "coreum-testnet-1"
     coreum_denom: "utestcore"
-    coreum_version: "v4.1.2"
+    coreum_version: "v5.0.0"
     cosmovisor_version: "v1.5.0"
-    upgrade_name: "v4patch2"
+    upgrade_name: "v5"
     moniker: "full"
     external_ip: "{{ ansible_host }}"
 
